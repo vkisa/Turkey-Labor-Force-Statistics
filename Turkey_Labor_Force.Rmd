@@ -1,0 +1,233 @@
+---
+title: "Turkey Labor Force Statistics"
+author: "Veli Kisa"
+date: "27/04/2020"
+output: html_document
+---
+<div style="margin-bottom:100px;">
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Introduction
+This data is downloaded from Turkish Statistical Institute website. 
+(Link : http://www.turkstat.gov.tr/PreTabloArama.do?metod=search&araType=vt 
+Labour Force Statistics (2014 and after)(M))
+Data shows us the labour force statistics of Turkey. The number of labour force (thousand) is  based on year (2014-2019)  and there are sociological (gender, age_group,education) and regional variables. We can define these variables as;\
+
+
+gender= Erkek,Kadın (Male, Female) \
+age_group= illustrates age ranges \
+education= \
+          Okuma Yazma Bilmeyen = Unalphabet \
+           Lise Altı Eğitim     = Lower High-School \
+           Lise ve Dengi Meslek Okulu = High School And Equivalent Technical High School \
+           Yüksek Öğretim = Higher Education \
+ \
+regional = \
+          Akdeniz = Mediterrenean \
+          Batı Anadolu = Western Anatolia \
+          Batı Karadeniz = Western Black Sea \
+          Batı Marmara = Western Marmara \
+          Doğu Karadeniz= Eastern Karadeniz \
+          Doğu Marmara = Eastern Marmara \
+          Ege = Aegean \
+          Güneydoğu Anadolu = Southeastern Anatolia \
+          İstanbul = İstanbul \
+          Kuzeydoğu Anadolu= Northeastern Anatolia \
+          Orta Anadolu= Middle Anatolia \
+          Ortadoğu Anadolu = Middle Eastern Anatolia \
+ \          
+ \ 
+The numbers represent thousand result. We can specify the aim of this project as \
+
+ *1. Loading and tidy data (Gathering and separating data) \
+ *2. Display some relations between exact variables. \
+ *3. Applying statistical tests to determine whether there is relation between variables.\
+ 
+
+# Loading and Tidy Data 
+```{r}
+library(readxl)
+veri <- read_excel("veri.xlsx")
+```
+
+Data need to be arranged
+```{r}
+library(tidyr)
+colnames(veri)[3:14]<-gsub("-.*", "", colnames(veri)[3:14]) 
+#remove all strings after "-" character
+veri<-fill(veri,`cinsiyet_egitim.durumu`)
+#fill null rows with the lastest full row
+head(veri)
+```
+
+Now we should separate the first column as "gender", "age_group" and "education"
+
+```{r}
+library(stringr)
+veri$cinsiyet_egitim.durumu<-str_replace_all(veri$'cinsiyet_egitim.durumu', "\\s", "") 
+#1 remove spaces
+veri$cinsiyet_egitim.durumu<-str_split(veri$cinsiyet_egitim.durumu, "ve")
+#2 split cells as specific string ("ve")
+veri<-separate(veri,cinsiyet_egitim.durumu,c("gen_age","gender","age_group","education"),sep=',')
+#3 separate cells to columns with column names
+veri<-veri[,-1]
+#4 remove unnecessary column
+veri$age_group<-gsub(".*\\((.*)\\).*", "\\1", veri$age_group)
+veri$education<-gsub(".*\\((.*)\\).*", "\\1", veri$education)
+#5 take exact string into paranthesis
+veri$gender<-str_replace_all(veri$gender, "[[:punct:]]", " ")
+veri$education<-str_replace_all(veri$education, "[[:punct:]]", " ")
+#6 remove any characteristic from cells 
+veri$gender<-str_replace_all(veri$gender, "\\s", "")
+#7 take off the spaces
+head(veri)
+```
+
+To gather regions (from 'Akdeniz' to 'Orta Doğu Anadolu') into one column  (format should be as  'region','gender','education','age_group','year','Observation(N)') , 
+
+```{r}
+veri<-gather(veri, region, N, colnames(veri)[5:16])
+veri<-veri[,c(5,1,3,2,4,6)]
+colnames(veri)[5]<-"year"
+head(veri)
+str(veri)
+```
+
+Before analysing, column types should be assigned correctly.
+```{r,warning=FALSE}
+library(lubridate)
+veri$region<-as.factor(veri$region)
+veri$gender<-as.factor(veri$gender)
+veri$education<-as.factor(veri$education)
+veri$age_group<-as.factor(veri$age_group)
+veri$year<-lubridate::year(as.Date(veri$year,format= "%Y"))
+veri$N<-as.numeric(veri$N)
+str(veri)
+```
+
+While the first four (region,gender,education,age_group) columns have labaled as factor, year and N (thousand) has labeled as date and N (the number) has labeled as numeric.
+
+# Visualisation of Data
+
+Before plotting the graphs we need to create the frequency tables of variables that we want to plot.
+Variables "gender", "education" and "age_group" will be tabulated based on years.
+
+```{r}
+library(plyr)
+library(dplyr)
+vars <- names(veri)[2:4]
+for (i in vars) {
+  print(i)
+  freq.table <- veri %>% group_by_("year",i)%>%dplyr::summarise(sum. = sum(N,na.rm = T))
+  freq.table<-ddply(freq.table, .(year), mutate, per. = round((sum. / sum(sum.,na.rm = T)),3))
+  print(freq.table)
+}
+```
+
+
+Following chunk indicates the barplot graphs of work force numbers according to gender, education and age_group variables for certain years.
+
+
+
+```{r}
+library(ggplot2)
+for (i in vars) {
+  
+  freq.table <- veri %>% group_by_("year",i)%>%dplyr::summarise(sum. = sum(N,na.rm = T))
+  freq.table<-ddply(freq.table, .(year), mutate, per. = round((sum. / sum(sum.,na.rm = T)),3))
+ 
+  p<-ggplot(freq.table,aes(fill=freq.table[,i],y=freq.table[,"per."],x=freq.table[,"year"]))+
+    geom_bar(position="dodge", stat="identity")+
+    geom_text(aes(label=scales::percent(freq.table$per.)),position = position_dodge(.7),
+              size=3.5)+
+    labs(title=paste("Labour Force",i,sep = "-"),y="Percent",x="year",fill=i)
+  print(p)
+}
+```
+
+# Building Predictive Model
+
+Choosing the best suited technique based on type of predictors and target variable, dimensionality in the data. To select the right regression model belows are key factors on that way;
+ * Data exploration (We have already done on previous sections.)
+ * To compare the goodness of fit for different models, we can analyse with different metrics such as R-square, adjusted R-square, AIC, BIC, significance of parameters and error term. 
+ * And last but not least technique is definitely CV (Cross-Validation). This technique is the best way to evaluate models used for prediction. In this technique we need to divide our data set into two group (train and test). A simple mean squared difference between the observed and predicted values give us a measure for the prediction accuracy.
+
+Now, to select the right regression model we will apply both techniques (comparing the GOF and CV).
+
+## Comparing the Goodness of Fit Values
+
+To investigate the relationship "gender" , "age_group" , "education" with labor force , we need to apply statistical tests. While these three variables are independent as well as categoric, labor force (N) variable is target (dependent) and numeric. In this part the target variable will be considered as continuous. (We don't choose integer because range is much.)
+ 
+ 
+To select best features and create model "MXM" is a usefull package in R library. 
+Get more information :https://arxiv.org/pdf/1611.03227.pdf 
+
+### Continuous Target- Mixed Predictors
+"test" input describes the conditional independence test to use. 
+Continuous(Target)- Mixed (predictors)= testIndReg (Linear regression)
+"max_k" implies the maximum conditioning set to use in the conditional independence test. 
+"threshold"  shows the threshold (suitable values in [0,1]) for assessing p-values significance. Default value is 0.05.
+
+```{r}
+library(MXM)
+veri_na<-veri[-which(is.na(veri$N)),]
+veri_target<-veri_na$N
+veri_na2<-as.data.frame(veri_na[,-c(5,6)])
+result1<- MXM::SES(target = veri_target,dataset = veri_na2,threshold = 0.1,max_k = 4,
+                   test = "testIndReg",ini= NULL,wei= NULL,user_test= NULL, 
+                   hash       = TRUE, hashObject = NULL,ncores = 1 )
+result1@selectedVars
+result1@selectedVarsOrder
+result1@stats
+result1@pvalues
+result1@univ
+
+```
+First display means that four all predictors (region,gender,education, age_group) seleceted as variable for model and second output sorts these variables as significance values. 3rd and 4th results are about association degree between predictors and target variable. (while lower p-values indicate higher association, in test statistics (stats) , higher values indicate higher relation). We can explain such that "age_group","education", "region" and "gender" become predictors for our model in order of importance. 
+
+##Creating the Model and Cross Validation Test
+
+Now, we can create a model with selected variable. We apply the linear regression and  negative binomial regression. In this chapter we need to "caret" and "MASS" package to use these methods. We will also use Cross validation to evaluate models used for prediction. So we will split the data in training and test data.
+
+```{r}
+library(dplyr)
+library(caret)
+tra.samples<-veri_na$N %>%
+  createDataPartition(p=0.8, list = FALSE)
+tra.data<-veri_na[tra.samples,-5]
+test.data<-veri_na[-tra.samples,-5]
+model.lm <- lm(N ~., data = tra.data)
+predictions.lm <- model.lm %>% predict(test.data)
+data.frame( R2 = R2(predictions.lm, test.data$N),
+            RMSE = RMSE(predictions.lm, test.data$N),
+            MAE = MAE(predictions.lm, test.data$N))
+```
+
+
+Because the mean and variance of our target variable is not equal and categorical predictors- continuous (integer actually), we are appliying the neg. binomial regression. Negative binomial regression can be used for over-dispersed count data, that is when the conditional variance exceeds the conditional mean.
+
+```{r}
+library(MASS)
+tra.samples2<-veri_na$N %>%
+  createDataPartition(p=0.8, list = FALSE)
+tra.data2<-veri_na[tra.samples2,-5]
+test.data2<-veri_na[-tra.samples2,-5]
+model.nb <- glm.nb(N ~., data = tra.data2)
+predictions.nb <- model.nb%>% predict(test.data2)
+data.frame( R2 = R2(predictions.nb, test.data2$N),
+            RMSE = RMSE(predictions.nb, test.data2$N),
+            MAE = MAE(predictions.nb, test.data2$N))
+```
+
+When comparing two models linear and negative binom regressions, the one that produces the *lowest test sample RMSE* is the preferred model. So we can say that the linear model can be preferred than negative binomial regression. 
+
+# Conclusion
+
+In this project we have aimed to select related independent variables and set up models. After modelling we did compare these models and picked the more appropiate model. 
+
+For the future projects , converting the categoric variables to numerical using dummy variables can be good idea. So there could be more useful and comparable models we can use.  
